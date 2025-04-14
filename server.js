@@ -9,7 +9,7 @@ import errorMiddleware from './middlewares/errorMiddleware.js';
 
 dotenv.config();  
 const app = express();
-
+console.log(process.env.CLIENT_API)
 app.use(cors({
     origin:process.env.CLIENT_API,
     credentials:true
