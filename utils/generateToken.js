@@ -9,7 +9,7 @@ export const generateRefreshToken = (res, userId) => {
 
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
-    secure: false, // Set to true in production (HTTPS)
+    secure: process.env.NODE_ENV === 'development' ? false : true,
     sameSite: 'Strict',
     path: '/api/auth/refresh-token',
   });

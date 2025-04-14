@@ -3,16 +3,23 @@ import User from '../models/User.js';
 import { OAuth2Client } from 'google-auth-library';
 import { generateRefreshToken,generateAccessToken } from '../utils/generateToken.js'
 import jwt from 'jsonwebtoken'
+import asyncHandler from 'express-async-handler';
+import AppError from '../utils/AppError.js';
+
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 
 // --- Register user ---
-export const registerUser = async (req, res) => {
+export const registerUser = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
 
   
+  if (!name?.trim() || !email?.trim() || !password) {
+    throw new AppError('All fields are required', 400);
+  }
+  
   const userExists = await User.findOne({ email });
-  if (userExists) return res.status(400).json({ message: 'User already exists' });
+  if (userExists) throw new AppError('User already exists', 400);
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const user = new User({ name, email, password: hashedPassword });
@@ -21,38 +28,47 @@ export const registerUser = async (req, res) => {
   generateRefreshToken(res, user._id);
   const accessToken = generateAccessToken(user._id);
   res.json({  token: accessToken, user: { id: user._id, name: user.name } });
-};
+});
 
 
 // --- Login user ---
-export const loginUser = async (req, res) => {
+export const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const user = await User.findOne({ email });
+  
+  if (!email?.trim() || !password) {
+    throw new AppError('Email and password are required', 400);
+  }
 
-  if (!user || !user.password) return res.status(401).json({ message: 'Invalid credentials' });
+  const user = await User.findOne({ email });
+  if (!user || !user.password) {
+    throw new AppError('Invalid credentials', 401);
+  }
 
   const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+  if (!isMatch) {
+    throw new AppError('Invalid credentials', 401);
+  }
 
   generateRefreshToken(res, user._id);
   const accessToken = generateAccessToken(user._id);
   res.json({  token: accessToken, user: { id: user._id, name: user.name } });
-};
+});
 
 
 
 // --- Google OAuth login ---
-export const googleLogin = async (req, res) => {
+export const googleLogin = asyncHandler(async (req, res) => {
   const { token } = req.body;
+  if (!token) throw new AppError('Google token missing', 400);
   
-  try {
     const ticket = await client.verifyIdToken({
       idToken: token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
     
     const { name, email, sub: googleId } = ticket.getPayload();
-    
+    if (!email) throw new AppError('Google authentication failed', 401);
+
     let user = await User.findOne({ email });
     
     if (!user) {
@@ -63,28 +79,29 @@ export const googleLogin = async (req, res) => {
     generateRefreshToken(res, user._id);
     const accessToken = generateAccessToken(user._id);
   res.json({  token: accessToken, user: { id: user._id, name: user.name } });
-  } catch (error) {
-    console.error('Google login failed:', error.message);
-    res.status(401).json({ message: 'Google authentication failed' });
-  }
-};
+  
+});
 
-export const refreshToken = (req, res) => {
+export const refreshToken = asyncHandler((req, res) => {
   const token = req.cookies.refreshToken;
-  if (!token) return res.status(401).json({ message: 'No refresh token' });
+  if (!token) throw new AppError('No refresh token', 401);
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-    const accessToken = generateAccessToken(decoded.id);
-    res.json({ token: accessToken });
-  } catch (error) {
-    return res.status(403).json({ message: 'Invalid refresh token' });
-  }
-};
+  const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+  const accessToken = generateAccessToken(decoded.id);
 
-export const logoutUser = (req, res) => {
+  res.json({ token: accessToken });
+});
+
+
+// --- Logout ---
+export const logoutUser = asyncHandler((req, res) => {
   res.clearCookie('refreshToken', {
     path: '/api/auth/refresh-token',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'Strict',
   });
+
   res.json({ message: 'Logged out successfully' });
-};
+});
+

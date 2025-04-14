@@ -1,20 +1,21 @@
 import Note from '../models/note.js';
+import asyncHandler from 'express-async-handler';
+import AppError from '../utils/AppError.js';
 
-
-export const getNotes = async (req,res)=>{
-const notes = await Note.find().sort({position:1})
-res.json(notes)
-}
 
 const capitalizeFirstLetter = (text) => {
   return text?.charAt(0).toUpperCase() + text?.slice(1);
 };
 
+export const getNotes = asyncHandler(async (req,res)=>{
+const notes = await Note.find().sort({position:1})
+res.json(notes)
+})
 
-export const createNotes =  async (req, res) => {
+export const createNotes =  asyncHandler(async (req, res) => {
     const { title, content } = req.body;
     if (!title?.trim() && !content?.trim()) {
-      return res.status(400).json({ message: 'Note title or content is required.' });
+      throw new AppError('Note title or content is required', 400);
     }
     const count = await Note.countDocuments();
     const titleFormatted = capitalizeFirstLetter(title?.trim());
@@ -22,48 +23,50 @@ export const createNotes =  async (req, res) => {
     const newNote = new Note({ title :titleFormatted, content:contentFormatted, position: count });
     await newNote.save();
     res.status(201).json(newNote);
-  }
+  })
 
-  export const reOrder = async (req,res)=>{
+  //ReOrder the notes
+  export const reOrder = asyncHandler(async (req, res) => {
     const { reorderedNotes } = req.body;
+
+    if (!Array.isArray(reorderedNotes) || reorderedNotes.length === 0) {
+      throw new AppError('Reordered notes list is invalid or empty', 400);
+    }
+
     for (let i = 0; i < reorderedNotes.length; i++) {
       await Note.findByIdAndUpdate(reorderedNotes[i]._id, { position: i });
     }
     res.json({ message: "Reordered successfully" });
-  }
+  })
 
-  export const updateNote = async (req, res) => {
+  //Update the Notes
+  export const updateNote = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { title, content } = req.body;
     if (!title?.trim() && !content?.trim()) {
-      return res.status(400).json({ message: 'Title or content cannot be empty.' });
+      throw new AppError('Title or content is required', 400);
     }
-    try {
+    
       const updatedNote = await Note.findByIdAndUpdate(
         id,
         { title, content },
         { new: true }
       );
   
-      if (!updatedNote) return res.status(404).json({ message: "Note not found" });
+      if (!updatedNote) throw new AppError('Note not found', 404);
   
       res.json(updatedNote);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to update note" });
-    }
-  };
+    
+  });
   
-  export const deleteNote = async (req, res) => {
+  export const deleteNote = asyncHandler(async (req, res) => {
     const { id } = req.params;
-  
-    try {
+   
       const deleted = await Note.findByIdAndDelete(id);
-      if (!deleted) return res.status(404).json({ message: "Note not found" });
+      if (!deleted) throw new AppError('Note not found', 404);
   
       res.json({ message: "Note deleted successfully" });
-    } catch (err) {
-      res.status(500).json({ message: "Failed to delete note" });
-    }
-  };
+    
+  });
   
  
